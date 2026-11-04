@@ -1,0 +1,64 @@
+:root {
+  /* Палитра звёздного атласа: ультрамарин и позолота на холодной бумаге */
+  --paper: oklch(97.5% 0.006 250);
+  --paper-2: oklch(94.5% 0.014 255);
+  --ink: oklch(24% 0.06 264);
+  --ink-soft: oklch(43% 0.04 262);
+  --accent: oklch(47% 0.2 266);
+
+  --sky: oklch(30% 0.11 266);
+  --sky-2: oklch(35% 0.115 266);
+  --sky-3: oklch(41% 0.12 266);
+  --on-sky: oklch(97% 0.01 250);
+  --on-sky-soft: oklch(86% 0.035 260);
+
+  --gilt: oklch(82% 0.13 85);
+  --gilt-deep: oklch(66% 0.14 75);
+
+  /* Производные цвета — только через color-mix от базовых */
+  --rule: color-mix(in oklch, var(--ink) 14%, transparent);
+  --rule-strong: color-mix(in oklch, var(--ink) 30%, transparent);
+  --sky-rule: color-mix(in oklch, var(--on-sky) 16%, transparent);
+  --header-bg: color-mix(in oklch, var(--paper) 85%, transparent);
+  --gilt-glow: color-mix(in oklch, var(--gilt) 45%, transparent);
+  --gilt-haze: color-mix(in oklch, var(--gilt) 14%, transparent);
+  --sky-haze: color-mix(in oklch, var(--sky-3) 70%, transparent);
+  --shadow-deep: color-mix(in oklch, var(--ink) 55%, transparent);
+
+  /* Типографика */
+  --font-display: "Unbounded", "Arial Black", sans-serif;
+  --font-body: "Onest", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+  --text-sm: 0.875rem;
+  --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+  --text-lg: clamp(1.125rem, 1rem + 0.5vw, 1.375rem);
+  --text-xl: clamp(1.5rem, 1.1rem + 1.6vw, 2.5rem);
+  --text-2xl: clamp(2rem, 1.2rem + 3.4vw, 4.25rem);
+  --text-feature: clamp(1.6rem, 0.9rem + 2.6vw, 3.25rem);
+  --text-hero: clamp(3.25rem, 1rem + 9vw, 9.5rem);
+
+  /* Ритм */
+  --gutter: clamp(1rem, 0.5rem + 2.5vw, 2.5rem);
+  --space-section: clamp(4.5rem, 3rem + 6vw, 9rem);
+  --container: 1240px;
+  --measure: 38rem;
+  --header-h: 4.25rem;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-lg: 22px;
+  --radius-pill: 999px;
+
+  /* Движение */
+  --duration-fast: 150ms;
+  --duration-normal: 300ms;
+  --duration-draw: 1.8s;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (max-width: 720px) {
+  :root {
+    --header-h: 6.5rem;
+  }
+}

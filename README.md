@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="../../releases/latest"><b>Download the DMG</b></a> · <a href="README.ru.md">Русская версия</a>
+  <a href="../../releases/latest"><b>Download the DMG</b></a> · <a href="https://martystev.github.io/keid-sstp-macos/">Website</a> · <a href="README.ru.md">Русская версия</a>
 </p>
 
 <p align="center">

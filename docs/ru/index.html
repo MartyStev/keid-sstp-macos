@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keid — SSTP VPN клиент для macOS (Keenetic, MikroTik, Windows Server)</title>
+  <meta name="description" content="Keid — бесплатный SSTP VPN клиент для Mac в строке меню. Подключает MacBook к роутеру Keenetic через KeenDNS, к MikroTik, Windows Server RRAS или SoftEther в один клик, с kill-switch на фаерволе.">
+  <meta name="theme-color" content="#f4f7fb">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <link rel="canonical" href="https://martystev.github.io/keid-sstp-macos/ru/">
+  <link rel="alternate" hreflang="en" href="https://martystev.github.io/keid-sstp-macos/">
+  <link rel="alternate" hreflang="ru" href="https://martystev.github.io/keid-sstp-macos/ru/">
+  <link rel="alternate" hreflang="x-default" href="https://martystev.github.io/keid-sstp-macos/">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Keid">
+  <meta property="og:title" content="Keid — SSTP VPN клиент для macOS">
+  <meta property="og:description" content="Бесплатный SSTP VPN для строки меню Mac: Keenetic / KeenDNS, MikroTik, Windows Server, SoftEther. Kill-switch на фаерволе.">
+  <meta property="og:url" content="https://martystev.github.io/keid-sstp-macos/ru/">
+  <meta property="og:image" content="https://martystev.github.io/keid-sstp-macos/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:locale" content="ru_RU">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="../icon.png">
+  <link rel="preload" href="../fonts/unbounded-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../css/fonts.css">
+  <link rel="stylesheet" href="../css/tokens.css">
+  <link rel="stylesheet" href="../css/site.css">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Keid",
+    "alternateName": "Keid — SSTP VPN клиент для macOS",
+    "description": "Бесплатный SSTP VPN клиент с открытым исходным кодом для строки меню macOS: Keenetic (KeenDNS), MikroTik, Windows Server RRAS и SoftEther, с kill-switch на фаерволе pf.",
+    "applicationCategory": "UtilitiesApplication",
+    "applicationSubCategory": "VPN-клиент",
+    "operatingSystem": "macOS 14 или новее",
+    "softwareVersion": "1.2.0",
+    "inLanguage": ["ru", "en"],
+    "isAccessibleForFree": true,
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "RUB" },
+    "license": "https://opensource.org/licenses/MIT",
+    "url": "https://martystev.github.io/keid-sstp-macos/ru/",
+    "downloadUrl": "https://github.com/MartyStev/keid-sstp-macos/releases/latest",
+    "codeRepository": "https://github.com/MartyStev/keid-sstp-macos",
+    "screenshot": "https://martystev.github.io/keid-sstp-macos/panel.png",
+    "image": "https://martystev.github.io/keid-sstp-macos/icon.png",
+    "author": { "@type": "Person", "name": "MartyStev", "url": "https://github.com/MartyStev" }
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Перейти к содержанию</a>
+
+  <header class="site-header">
+    <div class="container site-header__inner">
+      <a class="logo" href="#top" aria-label="Keid — на главную">
+        <img src="../icon.png" width="34" height="34" alt="">
+        <span translate="no">Keid</span>
+      </a>
+      <nav class="site-nav" aria-label="Основная навигация">
+        <a href="#features">Возможности</a>
+        <a href="#install">Установка</a>
+        <a href="https://github.com/MartyStev/keid-sstp-macos">GitHub</a>
+        <a class="lang" href="../" hreflang="en" lang="en">English</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top" aria-labelledby="hero-heading">
+      <div class="container hero__grid">
+        <div class="hero__copy">
+          <h1 class="hero__title" id="hero-heading" translate="no">Keid</h1>
+          <p class="hero__directions">SSTP VPN клиент для macOS — для роутеров Keenetic (Netcraze), MikroTik, Windows&nbsp;Server и SoftEther</p>
+          <p class="hero__lead">В macOS нет SSTP. Keid добавляет его в строку меню: один раз указали сервер — дальше MacBook подключается к роутеру в один клик, и ничего не уходит с Mac мимо туннеля.</p>
+          <div class="hero__actions">
+            <a class="btn" href="https://github.com/MartyStev/keid-sstp-macos/releases/latest">Скачать для macOS</a>
+            <a class="btn btn--ghost" href="https://github.com/MartyStev/keid-sstp-macos">Исходный код</a>
+          </div>
+          <p class="hero__meta">Бесплатно · открытый код (MIT) · macOS 14+ · Apple Silicon и Intel · русский и английский</p>
+        </div>
+
+        <figure class="hero__figure">
+          <img class="hero__shot" src="../panel.png" width="336" height="337" fetchpriority="high"
+               alt="Панель Keid в строке меню: подключено, адрес туннеля, сервер, счётчики трафика и кнопка «Отключить»">
+          <figcaption class="chart-caption">
+            <span>Keid (ο² Эридана) — звезда в тройной системе 40&nbsp;Эридана.</span>
+            <span class="chart-caption__coords">04h 15m 16s · −07° 39′ 10″</span>
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="section section--paper-2" id="features" aria-labelledby="features-heading">
+      <div class="container">
+        <div class="section-head">
+          <h2 class="section-title" id="features-heading">VPN, который не протекает</h2>
+          <p class="section-lead">SSTP — это обычный HTTPS на порту 443, он проходит почти через любую сеть. Keid следит, чтобы трафик шёл только этим путём.</p>
+        </div>
+
+        <div class="feature">
+          <h3 class="feature__title">Kill-switch на фаерволе</h3>
+          <p>От «Подключить» до «Отключить» ничего не уходит с Mac мимо туннеля: ни во время подключения, ни после обрыва, неверного пароля или другого сбоя, ни от приложений, привязанных к Wi-Fi. Доступны только SSTP-сервер и ваша локальная сеть.</p>
+          <p class="feature__note">якорь pf · DNS только через туннель · IPv6 заблокирован</p>
+        </div>
+
+        <ul class="ruled">
+          <li>
+            <h3>Один клик</h3>
+            <p>Подключение и отключение из строки меню, щит сразу показывает состояние. Сервер, логин и пароль — в самом приложении, без конфигов и терминала.</p>
+          </li>
+          <li>
+            <h3>Весь трафик</h3>
+            <p>IPv4 и DNS идут через ваш домашний роутер, поэтому работают его правила — в том числе маршрутизация по доменам на Keenetic.</p>
+          </li>
+          <li>
+            <h3>Поднимается сам</h3>
+            <p>Переподключается после смены Wi-Fi, сна или перезапуска сервера — сразу, как вернулась сеть. При неверном пароле сразу останавливается, чтобы учётную запись не заблокировали.</p>
+          </li>
+          <li>
+            <h3>Сделан для Mac</h3>
+            <p>Универсальное приложение для Apple Silicon и Intel, уведомления, счётчики трафика, запуск при входе, русский и английский.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section sky" aria-labelledby="shots-heading">
+      <div class="container">
+        <div class="section-head">
+          <h2 class="section-title" id="shots-heading">Живёт в строке меню</h2>
+          <p class="section-lead">Одна панель, чтобы подключиться и видеть туннель, одно окно, чтобы настроить сервер.</p>
+        </div>
+        <div class="shots">
+          <figure>
+            <img src="../panel.png" width="336" height="337" loading="lazy" alt="Панель Keid: подключено к vpn.example.com">
+            <figcaption>Панель</figcaption>
+          </figure>
+          <figure>
+            <img src="../settings.png" width="486" height="506" loading="lazy" alt="Настройки Keid: SSTP-сервер, логин, пароль и параметры подключения">
+            <figcaption>Настройки</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="routers-heading">
+      <div class="container">
+        <div class="section-head">
+          <h2 class="section-title" id="routers-heading">С чем работает</h2>
+          <p class="section-lead">Подойдёт любой SSTP-сервер с MS-CHAPv2; вот самые распространённые.</p>
+        </div>
+        <ul class="routers">
+          <li><strong>Keenetic / Netcraze</strong><span>SSTP VPN-сервер, KeenDNS</span></li>
+          <li><strong>MikroTik</strong><span>SSTP-сервер RouterOS</span></li>
+          <li><strong>Windows Server</strong><span>RRAS с SSTP</span></li>
+          <li><strong>SoftEther VPN</strong><span>с включённым SSTP</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section section--paper-2" id="install" aria-labelledby="install-heading">
+      <div class="container">
+        <div class="section-head">
+          <h2 class="section-title" id="install-heading">Установка</h2>
+          <p class="section-lead">Без Homebrew, Docker и терминала.</p>
+        </div>
+        <ol class="steps">
+          <li><h3>Скачайте</h3><p>DMG со страницы релизов — перетащите Keid в «Программы».</p></li>
+          <li><h3>Разрешите</h3><p>Приложение не нотаризовано: при первом запуске откройте «Системные настройки» → «Конфиденциальность и безопасность» → «Всё равно открыть».</p></li>
+          <li><h3>Настройте</h3><p>Щит в строке меню → «Настройки»: сервер, логин и пароль, затем «Сохранить и установить».</p></li>
+          <li><h3>Подключайтесь</h3><p>Один клик. Дальше пароль администратора не нужен.</p></li>
+        </ol>
+        <div class="cta-row">
+          <a class="btn" href="https://github.com/MartyStev/keid-sstp-macos/releases/latest">Скачать Keid</a>
+          <a class="btn btn--ghost" href="https://github.com/MartyStev/keid-sstp-macos/blob/main/README.ru.md">Документация</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer sky">
+    <div class="container site-footer__inner">
+      <p>Keid · лицензия MIT · работает на <a href="https://gitlab.com/sstp-project/sstp-client">sstp-client</a> (GPL)</p>
+      <p><a href="https://github.com/MartyStev/keid-sstp-macos">GitHub</a> · <a href="../" hreflang="en" lang="en">English version</a></p>
+    </div>
+  </footer>
+</body>
+</html>

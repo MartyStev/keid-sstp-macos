@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://martystev.github.io/keid-sstp-macos/sitemap.xml
