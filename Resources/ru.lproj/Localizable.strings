@@ -1,0 +1,118 @@
+/* Menu bar panel */
+"Keid" = "Keid";
+"Connected" = "Подключено";
+"Connecting…" = "Подключение…";
+"Disconnected" = "Отключено";
+"Not set up" = "Не настроено";
+"Connect" = "Подключить";
+"Disconnect" = "Отключить";
+"Cancel" = "Прервать";
+"Address" = "Адрес";
+"Server" = "Сервер";
+"Traffic" = "Трафик";
+"all through the tunnel" = "весь — через туннель";
+"Time" = "Время";
+"Log" = "Лог";
+"Settings…" = "Настройки…";
+"Quit" = "Выйти";
+"Enter your server, login and password to get started." = "Чтобы начать, укажите сервер, логин и пароль.";
+"Open Settings…" = "Открыть настройки…";
+"The network helper needs an update." = "Сетевой помощник нужно обновить.";
+"Update in Settings…" = "Обновить в настройках…";
+
+/* Settings */
+"SSTP server" = "SSTP-сервер";
+"Login" = "Логин";
+"Password" = "Пароль";
+"saved — leave empty to keep" = "сохранён — оставьте пустым";
+"Port 443 is used unless you add one, e.g. vpn.example.com:4443." = "По умолчанию порт 443; другой можно указать так: vpn.example.com:4443.";
+"Connection" = "Подключение";
+"Verify the server certificate" = "Проверять сертификат сервера";
+"Turn off only for servers with a self-signed certificate." = "Выключайте только для серверов с самоподписанным сертификатом.";
+"Block IPv6 while connected" = "Блокировать IPv6 во время подключения";
+"The tunnel carries IPv4 only; without blocking, IPv6 traffic would bypass it." = "Туннель передаёт только IPv4; без блокировки IPv6-трафик шёл бы мимо него.";
+"Reconnect automatically" = "Переподключаться автоматически";
+"Launch at login" = "Запускать при входе";
+"Launch at login: %@" = "Автозапуск: %@";
+"Save and Install" = "Сохранить и установить";
+"Save and Update Helper" = "Сохранить и обновить помощник";
+"Save" = "Сохранить";
+"Saved. You can connect from the menu bar." = "Сохранено. Подключиться можно из строки меню.";
+"macOS asks for an administrator password to install the network helper and store these settings. Connecting later needs no password." = "macOS попросит пароль администратора, чтобы установить сетевой помощник и сохранить настройки. Для подключения пароль потом не нужен.";
+"Uninstall Helper…" = "Удалить помощник…";
+"Remove the network helper and the saved server?" = "Удалить сетевой помощник и сохранённый сервер?";
+"Uninstall" = "Удалить";
+"The app itself stays; drag it to the Trash to remove it completely." = "Само приложение останется; чтобы удалить его полностью, перетащите его в Корзину.";
+"The helper was removed." = "Помощник удалён.";
+
+/* Validation */
+"Enter the server address." = "Укажите адрес сервера.";
+"The server address may contain only letters, digits, dots, dashes and :port, and must start with a letter or a digit." = "Адрес сервера может содержать только латинские буквы, цифры, точки, дефисы и :порт и должен начинаться с буквы или цифры.";
+"The password is too long: at most 128 bytes (64 Cyrillic letters)." = "Пароль слишком длинный: не больше 128 байт (64 русские буквы).";
+"The port must be a number from 1 to 65535." = "Порт — число от 1 до 65535.";
+"Enter the login." = "Укажите логин.";
+"Enter the password." = "Укажите пароль.";
+"The password cannot contain a double quote (\") or a backslash (\\)." = "Пароль не может содержать двойную кавычку (\") или обратную косую черту (\\).";
+"Fields cannot contain line breaks." = "Поля не могут содержать переносы строк.";
+
+/* Errors */
+"Cancelled." = "Отменено.";
+"Check the server settings." = "Проверьте настройки сервера.";
+"Could not create a temporary file." = "Не удалось создать временный файл.";
+"Keid needs administrator rights to set up its network helper." = "Приложению Keid нужны права администратора, чтобы настроить сетевой помощник.";
+"The helper is not set up for this user. Open Settings and save." = "Помощник не настроен для этого пользователя. Откройте настройки и сохраните.";
+"Unknown error" = "Неизвестная ошибка";
+"The server rejected the login or password. Check them in Settings." = "Сервер отклонил логин или пароль. Проверьте их в настройках.";
+
+/* Language */
+"Language" = "Язык";
+"System" = "Как в системе";
+"The new language is used after a restart." = "Новый язык включится после перезапуска.";
+"Restart Now" = "Перезапустить";
+
+/* Messages from the network helper */
+"/usr/sbin/pppd is missing on this macOS version" = "В этой версии macOS нет /usr/sbin/pppd";
+"authentication failed" = "Сервер отклонил логин или пароль. Проверьте их в настройках.";
+"bad BLOCK_IPV6" = "Неверное значение BLOCK_IPV6";
+"bad VERIFY_CERT" = "Неверное значение VERIFY_CERT";
+"bad user name" = "Недопустимое имя пользователя";
+"could not connect — see the log" = "Не удалось подключиться — подробности в журнале";
+"could not route traffic into the tunnel — see the log" = "Не удалось направить трафик в туннель — подробности в журнале";
+"invalid server address" = "Недопустимый адрес сервера";
+"login is empty" = "Логин не указан";
+"must run as root" = "Нужны права root";
+"not configured — open Settings and save the server" = "Сервер не настроен — откройте настройки и сохраните его";
+"password is empty" = "Пароль не указан";
+"port must be 1–65535" = "Порт должен быть от 1 до 65535";
+"port must be a number" = "Порт должен быть числом";
+"server address may contain only letters, digits, dots, dashes and :port" = "Адрес сервера может содержать только буквы, цифры, точки, дефисы и :порт";
+"settings file has the wrong owner" = "У файла настроек неверный владелец";
+"settings file is missing" = "Файл настроек не найден";
+"settings file must be mode 600" = "У файла настроек должны быть права 600";
+"sstpc is missing — reinstall the helper from Settings" = "sstpc не найден — переустановите помощник в настройках";
+"sudoers rule failed validation" = "Правило sudoers не прошло проверку";
+"the password cannot contain a double quote or a backslash (sstpc limitation)" = "Пароль не может содержать двойную кавычку или обратную косую черту (ограничение sstpc)";
+"Reconnecting. Internet traffic is blocked until the tunnel is back." = "Переподключение. Интернет-трафик заблокирован, пока туннель не восстановится.";
+"Wait until the current operation finishes." = "Дождитесь окончания текущей операции.";
+"server address must start with a letter or a digit" = "Адрес сервера должен начинаться с буквы или цифры";
+"the password is too long (at most 128 bytes)" = "Пароль слишком длинный (не больше 128 байт)";
+"the helper did not answer in time" = "Помощник не ответил вовремя";
+"Internet traffic is blocked. Connect again, or disconnect to unblock it." = "Интернет-трафик заблокирован. Подключитесь снова или отключитесь, чтобы снять блокировку.";
+"Disconnect and unblock internet" = "Отключить и разблокировать интернет";
+"could not enable the firewall — see the log" = "Не удалось включить фаервол — подробности в журнале";
+"Cancelling…" = "Отмена…";
+"The server certificate is not checked: the connection can be intercepted. Turn the check on in Settings if the server has a valid certificate." = "Сертификат сервера не проверяется: соединение можно перехватить. Включите проверку в настройках, если у сервера действительный сертификат.";
+"Unexpected error: %@" = "Непредвиденная ошибка: %@";
+"The administrator prompt failed." = "Не удалось запросить права администратора.";
+"Not saved yet" = "Не сохранено";
+"Internet blocked" = "Интернет заблокирован";
+"Data" = "Данные";
+"Copy Log" = "Копировать журнал";
+"Show notifications" = "Показывать уведомления";
+"When the connection is lost or restored, and when the server rejects the login." = "Когда соединение теряется или восстанавливается и когда сервер отклоняет логин.";
+"VPN connection lost" = "VPN-соединение потеряно";
+"Internet traffic is blocked until the tunnel is back. Reconnecting…" = "Интернет-трафик заблокирован, пока туннель не восстановится. Переподключение…";
+"VPN connection restored" = "VPN-соединение восстановлено";
+"All traffic goes through the tunnel again." = "Весь трафик снова идёт через туннель.";
+"VPN login rejected" = "VPN: логин отклонён";
+"The server rejected the login or password. Internet traffic stays blocked until you disconnect." = "Сервер отклонил логин или пароль. Интернет-трафик заблокирован, пока вы не отключитесь.";

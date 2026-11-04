@@ -1,0 +1,602 @@
+#!/bin/sh
+# sstp-helper — the privileged half of Keid (an SSTP VPN client).
+#
+#   sstp-helper up | down | status | log
+#
+# Installed root:wheel 755 into /Library/PrivilegedHelperTools/sstp-mac-client
+# by install-helper.sh. A sudoers rule lets the console user run exactly these
+# four commands without a password and without any other arguments. The
+# server, login and password live in /etc/sstp-mac-client/server.conf (root,
+# 600) and can only be changed through the admin-authenticated installer.
+#
+# All traffic of the Mac (IPv4 and DNS) is routed through the tunnel. A pf
+# firewall (kill-switch) is on from `up` until `down`: outside the tunnel only
+# the SSTP server and the local network are reachable — also while connecting,
+# after a drop and after any failure — so nothing leaves unencrypted.
+set -eu
+umask 077
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+# the output of route, ifconfig, netstat and pfctl is parsed: no localized text
+LC_ALL=C
+export PATH LC_ALL
+
+HELPER_VERSION=10
+BASE=/Library/PrivilegedHelperTools/sstp-mac-client
+SSTPC=$BASE/sstpc
+CONF=/etc/sstp-mac-client/server.conf
+RUN=/var/run/sstp-mac-client
+LOG=/var/log/sstp-mac-client.log
+LINK=sstp-mac-client
+LINKPID=/var/run/ppp-$LINK.pid
+UP_TIMEOUT=30
+LOG_MAX_BYTES=1048576
+# Four quarters of IPv4 into the tunnel: more specific than any default route,
+# so they win over the Wi-Fi route without touching it (everything is back as
+# it was after disconnecting). They are bound to the ppp interface and vanish
+# with it.
+TUNNEL_NETS="0.0.0.0/2 64.0.0.0/2 128.0.0.0/2 192.0.0.0/2"
+BLOCK_NETS6="::/1 8000::/1"
+# The kill-switch: rules in our own anchor under com.apple/*, which the
+# system's /etc/pf.conf evaluates, so /etc/pf.conf itself is never changed.
+PF_ANCHOR=com.apple/sstp-mac-client
+# Multicast (Bonjour) and broadcast. The LAN itself, link-local included, is
+# allowed per interface, see lan_rules.
+LINK_NETS="224.0.0.0/4 255.255.255.255"
+# sstpc resolves the server through mDNSResponder, which the firewall blocks:
+# the server's address goes here while the firewall is on.
+HOSTS=/etc/hosts
+HOSTS_MARK="# sstp-mac-client"
+
+die(){ printf 'error=%s\n' "$*"; exit 1; }
+# a log that cannot be written (disk full) must not abort a half-done command
+logl(){ { printf '%s sstp-helper: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG"; } 2>/dev/null || true; }
+
+# sstpc formats `password "…"` into a 255-byte buffer and writes the full
+# formatted length: a longer password would make it write past the buffer.
+MAX_PASS_BYTES=128
+check_password_length(){
+	[ "$(printf '%s' "$1" | wc -c | tr -d ' ')" -le "$MAX_PASS_BYTES" ] || die "the password is too long (at most 128 bytes)"
+}
+
+load_conf(){
+	[ -f "$CONF" ] || die "not configured — open Settings and save the server"
+	# shellcheck disable=SC1090
+	. "$CONF"
+	VERIFY_CERT=${VERIFY_CERT:-1}
+	BLOCK_IPV6=${BLOCK_IPV6:-1}
+	# The certificate is checked against the system roots (root-owned, SIP) and
+	# sstpc compares its CN with the server name. Self-signed servers need
+	# VERIFY_CERT=0, which downgrades errors to warnings.
+	if [ "$VERIFY_CERT" = 1 ]; then
+		TLS_OPTS="--ca-cert /etc/ssl/cert.pem --tls-ext"
+	else
+		TLS_OPTS="--cert-warn --tls-ext"
+	fi
+	# usepeerdns: the server's DNS becomes the system DNS (Apple pppd publishes
+	# it to configd), so DNS-based routing rules on the server side work.
+	# nodefaultroute: routes are managed here (TUNNEL_NETS).
+	PPP_OPTS="usepeerdns nodefaultroute require-mschap-v2 noauth noipdefault noccp refuse-eap refuse-pap refuse-mschap"
+	# a leading dash or dot: sstpc would take the host for an option
+	case "${SSTP_HOST:-}" in ''|*[!A-Za-z0-9.:-]*|[!A-Za-z0-9]*) die "invalid server address" ;; esac
+	[ -n "${SSTP_USER:-}" ] || die "login is empty"
+	[ -n "${SSTP_PASS:-}" ] || die "password is empty"
+	check_password_length "$SSTP_PASS"
+	SERVER_NAME=${SSTP_HOST%:*}
+	SERVER_PORT=443
+	case "$SSTP_HOST" in *:*) SERVER_PORT=${SSTP_HOST##*:} ;; esac
+}
+
+# pppd writes two lines into the linkname pid file: pid and interface name.
+ppp_pid(){ sed -n 1p "$LINKPID" 2>/dev/null || true; }
+# Fallback: the ppp interface that did not exist before connecting.
+ppp_if(){
+	_n=$(sed -n 2p "$LINKPID" 2>/dev/null || true)
+	[ -n "$_n" ] && { echo "$_n"; return; }
+	cat "$RUN/ifname" 2>/dev/null || true
+}
+ppp_list(){ ifconfig -l | tr ' ' '\n' | grep '^ppp' || true; }
+detect_new_if(){
+	for _n in $(ppp_list); do
+		grep -qx "$_n" "$RUN/ifs-before" 2>/dev/null || { echo "$_n" > "$RUN/ifname"; return; }
+	done
+}
+# is_ours <pid>: the PID is still our sstpc or pppd — PIDs in pid files may
+# have been reused by an unrelated process after a crash or reboot. Both carry
+# our options file on their command line; the program name cannot be used, as
+# pppd renames itself after its tty (it shows as /dev/ttys000 in ps).
+is_ours(){
+	[ -n "$1" ] || return 1
+	case "$(ps -ww -p "$1" -o command= 2>/dev/null)" in *"$RUN/ppp.options"*) return 0 ;; esac
+	return 1
+}
+pppd_alive(){ is_ours "$(ppp_pid)"; }
+if_addr(){ ifconfig "$1" 2>/dev/null | awk '/inet /{print $2; exit}'; }
+if_peer(){ ifconfig "$1" 2>/dev/null | awk '/inet /{print $4; exit}'; }
+iface_for(){ route -n get "$1" 2>/dev/null | awk '/interface:/{print $2}'; }
+
+rotate_log(){
+	[ -f "$LOG" ] || return 0
+	[ "$(stat -f %z "$LOG" 2>/dev/null || echo 0)" -gt "$LOG_MAX_BYTES" ] || return 0
+	mv -f "$LOG" "$LOG.1"
+}
+
+# pppd options file — no secrets: sstpc hands login and password to pppd.
+write_options(){
+	mkdir -p "$RUN"; chmod 700 "$RUN"
+	{
+		printf '%s\n' $PPP_OPTS
+		printf 'nodetach\nlinkname %s\nlogfile %s\n' "$LINK" "$LOG"
+		# a dead tunnel (router hung, provider changed the IP) is noticed
+		# within 20 s; with the kill-switch, that is time without internet
+		printf 'lcp-echo-interval 5\nlcp-echo-failure 4\n'
+	} > "$RUN/ppp.options"
+	chmod 600 "$RUN/ppp.options"
+}
+
+# sstpc launches pppd, not the other way round (pty + --nolaunchpppd):
+# sstpc 1.0.20 without the pppd plugin only watches MS-CHAPv2 and derives the
+# keys for SSTP Call-Connected (auth_check) when pppd is its child. In pty
+# mode PPP comes up but the server never passes data and drops the session.
+# Password: never on a command line — `--password -` makes our patched sstpc
+# read it from stdin (scripts/patches/sstpc-password-stdin.patch; printf is a
+# shell builtin, so no process carries it either). pppd gets it through a
+# temp file (root, 600, deleted after CHAP).
+start_sstpc(){
+	# shellcheck disable=SC2086
+	printf '%s\n' "$SSTP_PASS" | nohup "$SSTPC" --log-stderr --log-level 3 $TLS_OPTS \
+		--user "$SSTP_USER" --password - "$SSTP_HOST" \
+		-- file "$RUN/ppp.options" >>"$LOG" 2>&1 &
+	echo "$!" > "$RUN/sstpc.pid"
+}
+
+# The system's IPv4 DNS servers.
+resolvers(){ scutil --dns 2>/dev/null | awk '/nameserver\[[0-9]+\] : [0-9.]+$/{print $3}' | sort -u; }
+
+# The server's IPv4 addresses. Behind the firewall mDNSResponder cannot reach
+# the DNS servers (only root may), so they are asked directly with dig.
+resolve_server(){
+	case "$SERVER_NAME" in *[!0-9.]*) ;; *) echo "$SERVER_NAME"; return 0 ;; esac
+	if firewall_active; then
+		for _r in $(resolvers); do
+			# as nobody: the firewall lets only that user reach the DNS servers
+			_a=$(sudo -n -u nobody dig +short +time=2 +tries=1 A "$SERVER_NAME" "@$_r" 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
+			[ -n "$_a" ] && { echo "$_a" | sort -u; return 0; }
+		done
+	else
+		dscacheutil -q host -a name "$SERVER_NAME" 2>/dev/null | awk '/^ip_address:/{print $2}' | grep -E '^[0-9.]+$' | sort -u || true
+	fi
+	return 0   # nothing resolved: the caller falls back to the last address
+}
+
+# --- Firewall (kill-switch) ----------------------------------------------
+
+# The kill-switch should be on: we hold pf references (one token per line).
+firewall_active(){ [ -s "$RUN/pf.token" ]; }
+pf_enabled(){ pfctl -s info 2>/dev/null | grep -q 'Status: Enabled'; }
+# Our rules are loaded and their final block is in place.
+anchor_loaded(){ pfctl -a "$PF_ANCHOR" -s rules 2>/dev/null | grep -q 'block return out quick'; }
+
+# net_of <ip> <hex netmask>: "a.b.c.d/prefix" of the network.
+net_of(){
+	_m=$(( $2 ))
+	_p=0; _x=$_m
+	while [ "$_x" -gt 0 ]; do _p=$(( _p + (_x & 1) )); _x=$(( _x >> 1 )); done
+	_o1=${1%%.*}; _r=${1#*.}; _o2=${_r%%.*}; _r=${_r#*.}; _o3=${_r%%.*}; _o4=${_r#*.}
+	_n=$(( ((_o1 << 24) | (_o2 << 16) | (_o3 << 8) | _o4) & _m ))
+	echo "$(( (_n >> 24) & 255 )).$(( (_n >> 16) & 255 )).$(( (_n >> 8) & 255 )).$(( _n & 255 ))/$_p"
+}
+
+# is_private_net <a.b.c.d/prefix>: the whole network lies in a private or
+# link-local block. A rogue DHCP server could hand out a /3 "LAN" covering
+# half the internet; its connected route would beat the tunnel's /2s.
+is_private_net(){
+	_a=${1%%.*}; _r=${1#*.}; _b=${_r%%.*}; _len=${1##*/}
+	case "$_a" in
+	10) [ "$_len" -ge 8 ] ;;
+	172) [ "$_b" -ge 16 ] && [ "$_b" -le 31 ] && [ "$_len" -ge 12 ] ;;
+	192) [ "$_b" = 168 ] && [ "$_len" -ge 16 ] ;;
+	169) [ "$_b" = 254 ] && [ "$_len" -ge 16 ] ;;
+	*) return 1 ;;
+	esac
+}
+
+# Only the private networks the Mac is directly attached to, not every
+# private range: a 10.x network behind the VPN must not be reached through
+# Wi-Fi. A new interface or address is picked up on the next connect.
+lan_rules(){
+	for _i in $(ifconfig -l 2>/dev/null); do
+		case "$_i" in lo*|ppp*|utun*|ipsec*|gif*|stf*) continue ;; esac
+		ifconfig "$_i" 2>/dev/null | awk '/inet /{print $2, $4}' | while read -r _ip _mask; do
+			case "$_mask" in 0x*) ;; *) continue ;; esac
+			_net=$(net_of "$_ip" "$_mask")
+			if is_private_net "$_net"; then
+				echo "pass out quick inet to $_net"
+			else
+				logl "not allowing $_net on $_i through the firewall (not a private network)"
+			fi
+		done
+	done
+}
+
+# pf_rules <tunnel-if or empty>. Outgoing only; `block return` refuses at
+# once, so apps fail fast instead of hanging.
+pf_rules(){
+	echo "# Keid kill-switch: nothing leaves the Mac outside the tunnel"
+	echo "pass out quick on lo0 all"
+	[ -z "$1" ] || echo "pass out quick on $1 all"
+	# the helper's own lookups (dig as nobody); apps ask mDNSResponder, which
+	# runs as _mdnsresponder and stays blocked
+	_dns=$(resolvers | tr '\n' ' ')
+	[ -z "$_dns" ] || echo "pass out quick proto { udp tcp } to { $_dns} port 53 user nobody"
+	# no other DNS outside the tunnel, not even to the router of the local
+	# network (it may still be listed as a resolver)
+	echo "block return out quick proto { udp tcp } to any port { 53 853 }"
+	# the system's DHCP client (root); a user process may bind port 68 too
+	echo "pass out quick inet proto udp from any port 68 to any port 67 user root"
+	# sstpc's TLS session to the server, nothing else to that address
+	_srv=$({ tr '\n' ' ' < "$RUN/pinned"; } 2>/dev/null || true)
+	[ -z "$_srv" ] || echo "pass out quick inet proto tcp to { $_srv} port ${SERVER_PORT:-443} user root"
+	lan_rules
+	echo "pass out quick inet to { $LINK_NETS }"
+	echo "pass out quick inet6 to { fe80::/10 ff00::/8 }"
+	[ "$BLOCK_IPV6" = 1 ] || echo "pass out quick inet6 all"
+	echo "block return out quick all"
+}
+
+# firewall_load <tunnel-if or empty>: (re)loads the rules and enables pf.
+firewall_load(){
+	mkdir -p "$RUN"; chmod 700 "$RUN"
+	pf_rules "${1:-}" > "$RUN/pf.rules"
+	firewall_apply
+}
+
+# Loads $RUN/pf.rules and makes sure pf enforces them.
+firewall_apply(){
+	# /etc/pf.conf provides the com.apple/* anchor point (launchd loads it at
+	# boot). Without it our rules would never be evaluated; another program
+	# replaced the main ruleset, which is not ours to overwrite.
+	if ! pfctl -sr 2>/dev/null | grep -q 'anchor "com.apple/\*"'; then
+		logl "the pf main ruleset has no com.apple anchor point (replaced by another program?)"
+		return 1
+	fi
+	pfctl -a "$PF_ANCHOR" -f "$RUN/pf.rules" >/dev/null 2>&1 || { logl "could not load the firewall rules"; return 1; }
+	anchor_loaded || { logl "the firewall rules did not take effect"; return 1; }
+	# Our own reference keeps pf on when others release theirs; pf may also
+	# have been disabled outright (pfctl -d). -E counts references, so other
+	# users of pf are not disturbed.
+	if ! firewall_active || ! pf_enabled; then
+		_tok=$(pfctl -E 2>&1 | awk '/Token/{print $NF}')
+		[ -n "$_tok" ] || { logl "could not enable the firewall"; return 1; }
+		firewall_active || logl "firewall on: traffic outside the tunnel is blocked"
+		echo "$_tok" >> "$RUN/pf.token"
+	fi
+}
+
+# Called by `status`: something else may have disabled pf or flushed our
+# rules. Put the kill-switch back.
+firewall_ensure(){
+	firewall_active || return 0
+	pf_enabled && anchor_loaded && return 0
+	logl "the firewall was turned off by something else — turning it back on"
+	firewall_apply || logl "could not turn the firewall back on"
+	return 0
+}
+
+firewall_off(){
+	# Forget the firewall first: a `status` running meanwhile then sees it
+	# off, instead of "turned off by something else" and loading it again.
+	_toks=$(cat "$RUN/pf.token" 2>/dev/null || true)
+	rm -f "$RUN/pf.token" "$RUN/pf.rules"
+	# rules only: -F all would also drop pf states of other programs
+	pfctl -a "$PF_ANCHOR" -F rules >/dev/null 2>&1 || true
+	for _tok in $_toks; do pfctl -X "$_tok" >/dev/null 2>&1 || true; done
+	[ -z "$_toks" ] || logl "firewall off"
+}
+
+# set_hosts <ip>: the server name resolves to <ip> without DNS.
+set_hosts(){
+	case "$SERVER_NAME" in *[!0-9.]*) ;; *) clear_hosts; return ;; esac
+	write_hosts "$1 $SERVER_NAME $HOSTS_MARK"
+}
+
+clear_hosts(){
+	grep -q " $HOSTS_MARK\$" "$HOSTS" 2>/dev/null || return 0
+	write_hosts ""
+}
+
+# write_hosts <line or empty>: /etc/hosts without our entry, plus <line>.
+# Built in a temp file next to it and renamed over it, so /etc/hosts is
+# never seen empty or half-written (a kill, a full disk).
+write_hosts(){
+	_tmp=$(mktemp "$HOSTS.sstp.XXXXXX") || return 1
+	_rc=0; grep -v " $HOSTS_MARK\$" "$HOSTS" > "$_tmp" 2>/dev/null || _rc=$?
+	# 1: nothing left but our entry; 2: unreadable — keep /etc/hosts as it is
+	[ "$_rc" -le 1 ] || { rm -f "$_tmp"; logl "could not read $HOSTS"; return 1; }
+	# the last line may lack its newline
+	[ -z "$(tail -c 1 "$_tmp")" ] || echo >> "$_tmp"
+	[ -z "$1" ] || printf '%s\n' "$1" >> "$_tmp"
+	chmod 644 "$_tmp"
+	chown root:wheel "$_tmp" 2>/dev/null || true
+	mv -f "$_tmp" "$HOSTS" || { rm -f "$_tmp"; return 1; }
+	dscacheutil -flushcache >/dev/null 2>&1 || true
+	killall -HUP mDNSResponder >/dev/null 2>&1 || true
+}
+
+# Host route to the SSTP server through the current gateway, before
+# connecting. Without it the TCP session of SSTP itself would be routed into
+# the tunnel (a loop: "connected", but nothing flows). A /32 is more specific
+# than TUNNEL_NETS and keeps the session on the physical interface.
+pin_server_route(){
+	# Kept until a new pin is made: after a drop, the last address is the
+	# fallback when the server name does not resolve.
+	_old=$(cat "$RUN/pinned" 2>/dev/null || true)
+	_gw=$(route -n get default 2>/dev/null | awk '/gateway:/{print $2}')
+	_dif=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')
+	case "$_dif" in ''|ppp*|utun*|ipsec*)
+		logl "default route goes through '$_dif' — not pinning the server"; return 0 ;;
+	esac
+	[ -n "$_gw" ] || return 0
+	_ips=$(resolve_server)
+	[ -n "$_ips" ] || _ips=$_old
+	for _ip in $_old; do route -n delete -host "$_ip" >/dev/null 2>&1 || true; done
+	: > "$RUN/pinned"
+	for _ip in $_ips; do
+		route -n delete -host "$_ip" >/dev/null 2>&1 || true
+		route -n add -host "$_ip" "$_gw" >/dev/null 2>&1 && echo "$_ip" >> "$RUN/pinned"
+	done
+	if [ -s "$RUN/pinned" ]; then
+		logl "server $(tr '\n' ' ' < "$RUN/pinned")pinned to $_gw ($_dif)"
+	else
+		logl "could not pin the server (does $SERVER_NAME resolve?)"
+	fi
+}
+
+# set_route <record-file> <dest> <route args…>: adds the route, or changes
+# one left by a dropped session, and records <dest> in <record-file>.
+set_route(){
+	_file=$1; _dest=$2; shift 2
+	route -n add "$@" >/dev/null 2>&1 || route -n change "$@" >/dev/null 2>&1 || return 1
+	grep -qxF "$_dest" "$_file" 2>/dev/null || echo "$_dest" >> "$_file"
+}
+
+# All IPv4 into the tunnel. Refused without a pinned server: that would loop.
+# Fails closed: if a tunnel or IPv6 route cannot be set, `up` fails instead of
+# reporting a tunnel that traffic can bypass.
+apply_routes(){
+	_if=$1; : > "$RUN/routes"
+	if [ ! -s "$RUN/pinned" ]; then
+		logl "server address is not pinned — not routing traffic into the tunnel (it would loop)"
+		return 1
+	fi
+	for _n in $TUNNEL_NETS; do
+		set_route "$RUN/routes" "$_n" -net "$_n" -interface "$_if" || { logl "could not route $_n into $_if"; return 1; }
+	done
+	# The server's DNS may sit in a subnet the Mac is also attached to (both
+	# 192.168.1.x: home behind the VPN, a café here): its connected route would
+	# win over TUNNEL_NETS and the lookups would go to the café. Host routes
+	# keep them in the tunnel; the peer has one already (set by pppd).
+	_peer=$(if_peer "$_if")
+	for _d in $(tunnel_dns); do
+		[ "$_d" = "$_peer" ] && continue
+		set_route "$RUN/hostroutes" "$_d" -host "$_d" -interface "$_if" || { logl "could not route the DNS server $_d into $_if"; return 1; }
+	done
+	# The tunnel carries IPv4 only. Without this, IPv6-capable networks would
+	# send IPv6 traffic around the tunnel. -reject answers immediately, so apps
+	# fall back to IPv4 instead of hanging.
+	if [ "$BLOCK_IPV6" = 1 ]; then
+		for _n in $BLOCK_NETS6; do
+			set_route "$RUN/routes6" "$_n" -inet6 -net "$_n" ::1 -reject || { logl "could not block IPv6 ($_n)"; return 1; }
+		done
+	fi
+}
+
+# DNS servers pppd got from the server in this session (it logs them).
+tunnel_dns(){
+	tail -c "+$(( ${_log_from:-0} + 1 ))" "$LOG" 2>/dev/null |
+		awk '/(primary|secondary) +DNS address/{print $NF}' | grep -E '^[0-9.]+$' | sort -u || true
+}
+
+# Tunnel routes only; the IPv6 block and server pin stay.
+clear_tunnel_routes(){
+	for _n in $(cat "$RUN/routes" 2>/dev/null); do route -n delete -net "$_n" >/dev/null 2>&1 || true; done
+	for _d in $(cat "$RUN/hostroutes" 2>/dev/null); do route -n delete -host "$_d" >/dev/null 2>&1 || true; done
+	rm -f "$RUN/routes" "$RUN/hostroutes"
+}
+
+clear_routes(){
+	clear_tunnel_routes
+	for _n in $(cat "$RUN/routes6" 2>/dev/null); do route -n delete -inet6 -net "$_n" >/dev/null 2>&1 || true; done
+	for _ip in $(cat "$RUN/pinned" 2>/dev/null); do route -n delete -host "$_ip" >/dev/null 2>&1 || true; done
+	rm -f "$RUN/routes6" "$RUN/pinned"
+}
+
+# Where traffic actually goes after connecting — into the log, so a
+# "connected but nothing loads" report shows the cause.
+log_diag(){
+	_srv=$(head -1 "$RUN/pinned" 2>/dev/null || true)
+	_dns=$(scutil --dns 2>/dev/null | awk '/^resolver #1/{f=1} f&&/nameserver\[0\]/{n=$3} f&&/if_index/{print n" "$4; exit}')
+	logl "diagnostics: internet -> $(iface_for 8.8.8.8), server ${_srv:-?} -> $(iface_for "${_srv:-0.0.0.1}"), DNS: ${_dns:-?}, IPv6 blocked: $(cat "$RUN/routes6" 2>/dev/null | wc -l | tr -d ' ')/2, firewall: $(firewall_active && echo on || echo OFF)"
+}
+
+# A session is already being set up (sstpc runs with our options file).
+# Root only: any user can start a process with our options path in its args.
+session_running(){ pppd_alive || pgrep -u 0 -f "$RUN/ppp.options" >/dev/null 2>&1; }
+
+# One `up` at a time: a second one (double click, reconnect timer) would start
+# a parallel sstpc that fights the first for ppp0 and the server session.
+# is_our_up <pid>: the process is this helper running `up` — not whatever
+# reused the PID of one that was killed.
+is_our_up(){
+	[ -n "$1" ] || return 1
+	case "$(ps -ww -p "$1" -o command= 2>/dev/null)" in *"$0 up"*) return 0 ;; esac
+	return 1
+}
+
+# The lock is a symlink whose target is the holder's PID: created in one
+# atomic step, so no second `up` ever sees a lock without its PID.
+take_up_lock(){
+	mkdir -p "$RUN"; chmod 700 "$RUN"
+	# helper version 9 and older locked with a directory; `ln -s` would put
+	# the link inside it and "succeed"
+	if [ -d "$RUN/up.lock" ] && [ ! -L "$RUN/up.lock" ]; then
+		is_our_up "$(cat "$RUN/up.lock/pid" 2>/dev/null || true)" && return 1
+		rm -rf "$RUN/up.lock"
+	fi
+	if ! ln -s "$$" "$RUN/up.lock" 2>/dev/null; then
+		is_our_up "$(readlink "$RUN/up.lock" 2>/dev/null || true)" && return 1
+		rm -f "$RUN/up.lock"   # left behind by a killed helper
+		ln -s "$$" "$RUN/up.lock" 2>/dev/null || return 1
+	fi
+	trap 'rm -f "$RUN/up.lock"' EXIT
+}
+
+# pppd logs this when the server rejects the login or password.
+auth_failed_since(){ tail -c "+$(( $1 + 1 ))" "$LOG" 2>/dev/null | grep -q "authentication failed"; }
+
+# A failed `up`, for any reason (also a rejected password): the session ends,
+# but the firewall stays on. Only `down` (Disconnect) lets traffic out again.
+fail_up(){ # fail_up <message>
+	stop_tunnel
+	firewall_active && logl "traffic outside the tunnel stays blocked until you connect or disconnect"
+	die "$1"
+}
+
+cmd_up(){
+	load_conf
+	if session_running || ! take_up_lock; then cmd_status; return 0; fi
+	if session_running; then cmd_status; return 0; fi
+	[ -x "$SSTPC" ] || die "sstpc is missing — reinstall the helper from Settings"
+	[ -x /usr/sbin/pppd ] || die "/usr/sbin/pppd is missing on this macOS version"
+	rotate_log
+	touch /etc/ppp/options 2>/dev/null || true
+	write_options
+	rm -f "$RUN/ifname"; ppp_list > "$RUN/ifs-before"
+	logl "connecting to $SSTP_HOST"
+	_log_from=$(stat -f %z "$LOG" 2>/dev/null || echo 0)
+	# an entry left by a crash or a reboot would answer the lookup below
+	clear_hosts || true
+	pin_server_route
+	# From here on nothing leaves the Mac outside the tunnel. If the firewall
+	# cannot be set on the first connect, nothing was blocked yet: undo all.
+	if ! firewall_load; then
+		firewall_active || { cmd_down >/dev/null; die "could not enable the firewall — see the log"; }
+		fail_up "could not enable the firewall — see the log"
+	fi
+	[ -s "$RUN/pinned" ] || fail_up "could not connect — see the log"
+	set_hosts "$(head -1 "$RUN/pinned")" || fail_up "could not connect — see the log"
+	start_sstpc
+	_i=0
+	while [ "$_i" -lt "$UP_TIMEOUT" ]; do
+		sleep 1; _i=$((_i+1))
+		[ -n "$(ppp_if)" ] || detect_new_if
+		_if=$(ppp_if)
+		if [ -n "$_if" ] && [ -n "$(if_addr "$_if")" ]; then
+			date +%s > "$RUN/since"
+			apply_routes "$_if" || fail_up "could not route traffic into the tunnel — see the log"
+			firewall_load "$_if" || fail_up "could not enable the firewall — see the log"
+			logl "connected: $_if $(if_addr "$_if") -> $(if_peer "$_if"), all traffic through the tunnel"
+			log_diag
+			cmd_status; return 0
+		fi
+		if auth_failed_since "$_log_from"; then
+			logl "the server rejected the login or password"
+			# a stable code: the app stops retrying (a lockout risk) on this
+			echo "error_code=auth"
+			fail_up "authentication failed"
+		fi
+		# pppd has not written its pid file yet, or already died
+		if [ "$_i" -gt 3 ] && ! pppd_alive && ! pgrep -u 0 -f "$RUN/ppp.options" >/dev/null; then
+			break
+		fi
+	done
+	logl "not connected after ${_i}s"
+	fail_up "could not connect — see the log"
+}
+
+# Ends the session (sstpc, pppd) and removes its tunnel routes.
+stop_tunnel(){
+	_p=$(ppp_pid)
+	is_ours "$_p" && kill "$_p" 2>/dev/null || true
+	_s=$(cat "$RUN/sstpc.pid" 2>/dev/null || true)
+	is_ours "$_s" && kill "$_s" 2>/dev/null || true
+	pkill -u 0 -f "$RUN/ppp.options" 2>/dev/null || true
+	_i=0
+	while pppd_alive && [ "$_i" -lt 5 ]; do sleep 1; _i=$((_i+1)); done
+	pppd_alive && kill -9 "$_p" 2>/dev/null || true
+	clear_tunnel_routes
+	# sstpc's own temp file with the password for pppd: it deletes it after
+	# CHAP, but not when it is killed (-9) before that
+	find /private/tmp -maxdepth 1 -name 'sstp-pppd.*' -user 0 -type f -delete 2>/dev/null || true
+	rm -f "$RUN/since" "$RUN/ppp.options" "$RUN/sstpc.pid" "$RUN/ifname" "$RUN/ifs-before" "$LINKPID"
+}
+
+# Disconnect while connecting: stop that `up` first, or it would carry on
+# and turn the firewall back on after us. Only a process that is this helper
+# running `up` is stopped, not whatever reused a stale lock PID.
+cancel_up(){
+	[ -L "$RUN/up.lock" ] || [ -d "$RUN/up.lock" ] || return 0
+	_holder=$(readlink "$RUN/up.lock" 2>/dev/null || cat "$RUN/up.lock/pid" 2>/dev/null || true)
+	[ "$_holder" != "$$" ] || return 0
+	if ! is_our_up "$_holder"; then
+		rm -rf "$RUN/up.lock"   # stale: nobody would ever release it
+		return 0
+	fi
+	logl "connecting cancelled"
+	kill "$_holder" 2>/dev/null || true
+	_i=0
+	while kill -0 "$_holder" 2>/dev/null && [ "$_i" -lt 30 ]; do sleep 0.1; _i=$((_i+1)); done
+	kill -9 "$_holder" 2>/dev/null || true
+	# its EXIT trap does not run when it is killed
+	rm -rf "$RUN/up.lock"
+}
+
+cmd_down(){
+	cancel_up
+	stop_tunnel
+	clear_routes
+	firewall_off
+	# a failed hosts rewrite is logged; the state must still be reported
+	clear_hosts || logl "could not remove the server entry from $HOSTS"
+	[ -d "$RUN" ] && logl "disconnected"
+	echo "state=disconnected"
+	echo "version=$HELPER_VERSION"
+}
+
+cmd_status(){
+	firewall_ensure
+	if ! pppd_alive; then
+		if pgrep -u 0 -f "$RUN/ppp.options" >/dev/null 2>&1; then
+			echo "state=connecting"
+		# routes left behind by a dropped session (e.g. Wi-Fi change)
+		# the firewall still blocks traffic (drop, failed connect), or
+		# routes were left behind
+		elif firewall_active || [ -s "$RUN/routes6" ] || [ -s "$RUN/pinned" ]; then
+			echo "state=dropped"
+		else
+			echo "state=disconnected"
+		fi
+		echo "version=$HELPER_VERSION"; return 0
+	fi
+	_if=$(ppp_if); _a=$([ -n "$_if" ] && if_addr "$_if" || true)
+	[ -n "$_a" ] || { echo "state=connecting"; echo "version=$HELPER_VERSION"; return 0; }
+	echo "state=connected"
+	echo "if=$_if"
+	echo "addr=$_a"
+	echo "peer=$(if_peer "$_if")"
+	echo "since=$(cat "$RUN/since" 2>/dev/null || echo 0)"
+	echo "version=$HELPER_VERSION"
+}
+
+# Log without secrets: pppd does not write them, scrub anyway.
+cmd_log(){
+	[ -f "$LOG" ] || { echo "(empty)"; return 0; }
+	tail -n 60 "$LOG" | LC_ALL=C tr -cd '\11\12\15\40-\176\200-\377' | sed -E 's/(--password +)[^ ]+/\1***/g; s/^(password +).*/\1***/'
+}
+
+case "${1:-}" in
+	up) cmd_up ;;
+	down) cmd_down ;;
+	status) cmd_status ;;
+	log) cmd_log ;;
+	*) echo "usage: sstp-helper up|down|status|log" >&2; exit 2 ;;
+esac
