@@ -17,9 +17,9 @@
 </p>
 
 <p align="center">
-  <img src="docs/panel.png" width="336" alt="Keid panel in the menu bar: connected, with the tunnel address, server, data counters and a Disconnect button">
+  <img src="docs/panel.png" height="340" alt="Keid panel in the menu bar: connected, with the tunnel address, server, data counters and a Disconnect button">
   &nbsp;&nbsp;
-  <img src="docs/settings.png" width="324" alt="Keid Settings: server, login and password, connection options and language">
+  <img src="docs/settings.png" height="340" alt="Keid Settings: server, login and password, connection options and language">
 </p>
 
 ---
