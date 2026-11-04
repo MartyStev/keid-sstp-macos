@@ -16,6 +16,12 @@
   <a href="../../releases/latest"><b>Download the DMG</b></a> · <a href="README.ru.md">Русская версия</a>
 </p>
 
+<p align="center">
+  <img src="docs/panel.png" width="336" alt="Keid panel in the menu bar: connected, with the tunnel address, server, data counters and a Disconnect button">
+  &nbsp;&nbsp;
+  <img src="docs/settings.png" width="324" alt="Keid Settings: server, login and password, connection options and language">
+</p>
+
 ---
 
 ## Features

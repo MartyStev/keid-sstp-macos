@@ -16,6 +16,12 @@
   <a href="../../releases/latest"><b>Скачать DMG</b></a> · <a href="README.md">English</a>
 </p>
 
+<p align="center">
+  <img src="docs/panel.png" width="336" alt="Панель Keid в строке меню: подключено, адрес туннеля, сервер, счётчики трафика и кнопка «Отключить»">
+  &nbsp;&nbsp;
+  <img src="docs/settings.png" width="324" alt="Настройки Keid: сервер, логин и пароль, параметры подключения и язык">
+</p>
+
 ---
 
 ## Возможности
