@@ -2,6 +2,19 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions match `CFBundleShortVersionString` (the `VERSION` file).
 
+## Notes on router firmware
+
+**Keenetic users: update to KeeneticOS 5.2 or later.**
+
+KeeneticOS 5.2 fixes two bugs in the router's SSTP VPN server that affect Keid:
+
+- **[SYS-1959]** SSTP clients did not receive a route to the local network behind the router (DHCP-inform was not forwarded). After connecting, devices on the home network were not reachable.
+- **[SYS-1965]** SSTP clients could not connect through networks that inspect traffic (DPI / traffic analysis). The TLS handshake was dropped before the tunnel came up.
+
+Both bugs are fixed on the router side. No changes to Keid are needed; update the router firmware to get the fix.
+
+---
+
 ## [1.2.0] — 2026-11-04
 
 The app is now called **Keid** (it was SSTP Client). Update: drag Keid into Applications, delete the old “SSTP Client” app, open Keid, then open Settings and click **Save** once, so the new network helper (version 10) is installed. Your server and login carry over; turn **Launch at login** on again if you used it.
