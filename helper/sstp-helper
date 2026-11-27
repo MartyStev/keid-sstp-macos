@@ -20,7 +20,7 @@ PATH=/usr/bin:/bin:/usr/sbin:/sbin
 LC_ALL=C
 export PATH LC_ALL
 
-HELPER_VERSION=10
+HELPER_VERSION=11
 BASE=/Library/PrivilegedHelperTools/sstp-mac-client
 SSTPC=$BASE/sstpc
 CONF=/etc/sstp-mac-client/server.conf
@@ -110,8 +110,8 @@ is_ours(){
 	return 1
 }
 pppd_alive(){ is_ours "$(ppp_pid)"; }
-if_addr(){ ifconfig "$1" 2>/dev/null | awk '/inet /{print $2; exit}'; }
-if_peer(){ ifconfig "$1" 2>/dev/null | awk '/inet /{print $4; exit}'; }
+# Read the local and peer IPv4 addresses from the same interface snapshot.
+if_ipv4(){ ifconfig "$1" 2>/dev/null | awk '$1 == "inet" && $2 != "" {printf "%s %s\n", $2, $4; exit}'; }
 iface_for(){ route -n get "$1" 2>/dev/null | awk '/interface:/{print $2}'; }
 
 rotate_log(){
@@ -375,7 +375,7 @@ apply_routes(){
 	# 192.168.1.x: home behind the VPN, a café here): its connected route would
 	# win over TUNNEL_NETS and the lookups would go to the café. Host routes
 	# keep them in the tunnel; the peer has one already (set by pppd).
-	_peer=$(if_peer "$_if")
+	_peer=$(if_ipv4 "$_if"); _peer=${_peer#* }
 	for _d in $(tunnel_dns); do
 		[ "$_d" = "$_peer" ] && continue
 		set_route "$RUN/hostroutes" "$_d" -host "$_d" -interface "$_if" || { logl "could not route the DNS server $_d into $_if"; return 1; }
@@ -456,6 +456,7 @@ auth_failed_since(){ tail -c "+$(( $1 + 1 ))" "$LOG" 2>/dev/null | grep -q "auth
 # A failed `up`, for any reason (also a rejected password): the session ends,
 # but the firewall stays on. Only `down` (Disconnect) lets traffic out again.
 fail_up(){ # fail_up <message>
+	logl "connection failed: $1"
 	stop_tunnel
 	firewall_active && logl "traffic outside the tunnel stays blocked until you connect or disconnect"
 	die "$1"
@@ -470,7 +471,7 @@ cmd_up(){
 	rotate_log
 	touch /etc/ppp/options 2>/dev/null || true
 	write_options
-	rm -f "$RUN/ifname"; ppp_list > "$RUN/ifs-before"
+	rm -f "$RUN/ifname" "$RUN/since"; ppp_list > "$RUN/ifs-before"
 	logl "connecting to $SSTP_HOST"
 	_log_from=$(stat -f %z "$LOG" 2>/dev/null || echo 0)
 	# an entry left by a crash or a reboot would answer the lookup below
@@ -484,17 +485,25 @@ cmd_up(){
 	fi
 	[ -s "$RUN/pinned" ] || fail_up "could not connect — see the log"
 	set_hosts "$(head -1 "$RUN/pinned")" || fail_up "could not connect — see the log"
+	logl "starting sstpc"
 	start_sstpc
 	_i=0
 	while [ "$_i" -lt "$UP_TIMEOUT" ]; do
 		sleep 1; _i=$((_i+1))
 		[ -n "$(ppp_if)" ] || detect_new_if
 		_if=$(ppp_if)
-		if [ -n "$_if" ] && [ -n "$(if_addr "$_if")" ]; then
-			date +%s > "$RUN/since"
+		_ipv4=$([ -n "$_if" ] && if_ipv4 "$_if" || true)
+		if [ -n "$_ipv4" ]; then
+			logl "PPP IPv4 ready on $_if; configuring tunnel routes and firewall"
 			apply_routes "$_if" || fail_up "could not route traffic into the tunnel — see the log"
 			firewall_load "$_if" || fail_up "could not enable the firewall — see the log"
-			logl "connected: $_if $(if_addr "$_if") -> $(if_peer "$_if"), all traffic through the tunnel"
+			if ! pppd_alive; then
+				fail_up "pppd exited before the tunnel was ready"
+			fi
+			_ipv4=$([ "$(ppp_if)" = "$_if" ] && if_ipv4 "$_if" || true)
+			[ -n "$_ipv4" ] || fail_up "PPP interface $_if lost its IPv4 before the tunnel was ready"
+			date +%s > "$RUN/since"
+			logl "connected: $_if ${_ipv4%% *} -> ${_ipv4#* }, all traffic through the tunnel"
 			log_diag
 			cmd_status; return 0
 		fi
@@ -516,18 +525,23 @@ cmd_up(){
 # Ends the session (sstpc, pppd) and removes its tunnel routes.
 stop_tunnel(){
 	_p=$(ppp_pid)
-	is_ours "$_p" && kill "$_p" 2>/dev/null || true
 	_s=$(cat "$RUN/sstpc.pid" 2>/dev/null || true)
+	logl "stopping tunnel (pppd PID ${_p:-unknown}, sstpc PID ${_s:-unknown})"
+	is_ours "$_p" && kill "$_p" 2>/dev/null || true
 	is_ours "$_s" && kill "$_s" 2>/dev/null || true
 	pkill -u 0 -f "$RUN/ppp.options" 2>/dev/null || true
 	_i=0
 	while pppd_alive && [ "$_i" -lt 5 ]; do sleep 1; _i=$((_i+1)); done
-	pppd_alive && kill -9 "$_p" 2>/dev/null || true
+	if pppd_alive; then
+		logl "pppd still running after 5s; sending SIGKILL"
+		kill -9 "$_p" 2>/dev/null || true
+	fi
 	clear_tunnel_routes
 	# sstpc's own temp file with the password for pppd: it deletes it after
 	# CHAP, but not when it is killed (-9) before that
 	find /private/tmp -maxdepth 1 -name 'sstp-pppd.*' -user 0 -type f -delete 2>/dev/null || true
 	rm -f "$RUN/since" "$RUN/ppp.options" "$RUN/sstpc.pid" "$RUN/ifname" "$RUN/ifs-before" "$LINKPID"
+	logl "tunnel cleanup finished"
 }
 
 # Disconnect while connecting: stop that `up` first, or it would carry on
@@ -577,12 +591,13 @@ cmd_status(){
 		fi
 		echo "version=$HELPER_VERSION"; return 0
 	fi
-	_if=$(ppp_if); _a=$([ -n "$_if" ] && if_addr "$_if" || true)
-	[ -n "$_a" ] || { echo "state=connecting"; echo "version=$HELPER_VERSION"; return 0; }
+	_if=$(ppp_if)
+	_ipv4=$([ -s "$RUN/since" ] && [ -n "$_if" ] && if_ipv4 "$_if" || true)
+	[ -n "$_ipv4" ] || { echo "state=connecting"; echo "version=$HELPER_VERSION"; return 0; }
 	echo "state=connected"
 	echo "if=$_if"
-	echo "addr=$_a"
-	echo "peer=$(if_peer "$_if")"
+	echo "addr=${_ipv4%% *}"
+	echo "peer=${_ipv4#* }"
 	echo "since=$(cat "$RUN/since" 2>/dev/null || echo 0)"
 	echo "version=$HELPER_VERSION"
 }

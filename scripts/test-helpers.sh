@@ -21,7 +21,7 @@ printf '#!/bin/sh\nfor a; do printf "[%%s]\\n" "$a"; done\nIFS= read -r p || tru
 helper(){ # helper <extra-case> — a copy of sstp-helper on temp paths
 	sed -e "s#^SSTPC=.*#SSTPC=$T/sstpc#" -e "s#^CONF=.*#CONF=$T/server.conf#" \
 	    -e "s#^RUN=.*#RUN=$T/run#" -e "s#^LOG=.*#LOG=$T/log#" -e "s#^LINKPID=.*#LINKPID=$T/none.pid#" -e "s#^HOSTS=.*#HOSTS=$T/hosts#" \
-	    "$ROOT/helper/sstp-helper" |
+	    -e "s#/etc/ppp/options#$T/ppp.options#g" "$ROOT/helper/sstp-helper" |
 	awk -v extra="$1" '{print} /^case "\$\{1:-\}" in$/{print "\t" extra ";;"}' > "$T/h.sh"
 }
 cat > "$T/server.conf" <<'EOF'
@@ -282,6 +282,43 @@ check 'printf "%s\n" "$out" | grep -qx "error=authentication failed"' "and with 
 sh "$T/h.sh" down >/dev/null; pkill -f "$T/run/ppp.options" 2>/dev/null || true
 mv -f "$T/sstpc.args" "$T/sstpc"; rm -rf "$T/run" "$T/route.log" "$T/pf.log"
 
+# The helper must not publish connected if PPP drops while routes are configured.
+helper 't) cmd_up'
+cat > "$T/ppp-stubs.sh" <<'EOF'
+sleep(){ :; }
+session_running(){ return 1; }
+ppp_list(){ :; }
+clear_hosts(){ :; }
+set_hosts(){ :; }
+pin_server_route(){ echo 192.0.2.1 > "$RUN/pinned"; }
+start_sstpc(){ :; }
+ppp_if(){ echo ppp9; }
+pppd_alive(){ [ "${phase:-}:$PPP_TEST_MODE" != routes:exit ]; }
+if_ipv4(){ [ "${phase:-}:$PPP_TEST_MODE" = routes:no-ip ] || echo "172.16.3.33 192.168.1.1"; }
+apply_routes(){ cmd_status; phase=routes; }
+firewall_load(){ :; }
+firewall_active(){ return 0; }
+firewall_ensure(){ :; }
+stop_tunnel(){ :; }
+log_diag(){ :; }
+EOF
+awk -v stubs="$T/ppp-stubs.sh" '
+    /^case "\$\{1:-\}" in$/ { while ((getline line < stubs) > 0) print line }
+    { print }
+' "$T/h.sh" > "$T/ppp-readiness.sh"
+for mode in ready exit no-ip; do
+    rm -f "$T/log" "$T/run/since"
+    out=$(PPP_TEST_MODE=$mode sh "$T/ppp-readiness.sh" t) && rc=0 || rc=$?
+    check 'printf "%s\n" "$out" | grep -qx state=connecting' "status stays connecting during route setup ($mode)"
+    if [ "$mode" = ready ]; then
+        check '[ "$rc" -eq 0 ] && printf "%s\n" "$out" | grep -qx state=connected && grep -q "connected: ppp9 172.16.3.33" "$T/log"' "verified PPP is reported as connected"
+    else
+        check '[ "$rc" -ne 0 ] && ! printf "%s\n" "$out" | grep -qx state=connected && ! grep -q "connected: ppp9" "$T/log" && [ ! -e "$T/run/since" ]' "lost PPP is not reported as connected ($mode)"
+        check 'grep -q "traffic outside the tunnel stays blocked" "$T/log"' "failed verification keeps the kill-switch ($mode)"
+    fi
+done
+rm -rf "$T/run"
+
 # PIDs from pid files may have been reused by another process by now: only
 # our sstpc and pppd are killed, and only they count as a running session.
 # Like the real ones, the fakes carry our options file on their command line,
@@ -305,6 +342,7 @@ check 'kill -0 "$other" 2>/dev/null' "down does not kill a process that reused a
 printf '%s\nppp9\n' "$fake_pppd" > "$T/none.pid"; echo "$fake_sstpc" > "$T/run/sstpc.pid"
 sh "$T/h.sh" down >/dev/null; sleep 1
 check '! kill -0 "$fake_pppd" 2>/dev/null && ! kill -0 "$fake_sstpc" 2>/dev/null' "down stops pppd and sstpc"
+check 'grep -Fq "stopping tunnel (pppd PID $fake_pppd, sstpc PID $fake_sstpc)" "$T/log" && grep -Fq "tunnel cleanup finished" "$T/log"' "down records the start and completion of tunnel cleanup"
 kill "$other" "$fake_pppd" "$fake_sstpc" 2>/dev/null || true
 wait 2>/dev/null || true
 rm -rf "$T/run" "$T/none.pid"
