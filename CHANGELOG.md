@@ -15,6 +15,16 @@ Both bugs are fixed on the router side. No changes to Keid are needed; update th
 
 ---
 
+## [1.2.1] — 2026-11-27
+
+After replacing Keid in Applications, open Settings and click **Save and Update Helper** to install network helper version 11.
+
+### Fixed
+- Keid verifies that its PPP process is still running and that the tunnel interface still has IPv4 after setting up routes and firewall rules. If the tunnel drops during setup, Keid reports the failure and keeps the kill-switch active.
+
+### Added
+- The network log records tunnel startup, IPv4 readiness, connection failures, and teardown.
+
 ## [1.2.0] — 2026-11-04
 
 The app is now called **Keid** (it was SSTP Client). Update: drag Keid into Applications, delete the old “SSTP Client” app, open Keid, then open Settings and click **Save** once, so the new network helper (version 10) is installed. Your server and login carry over; turn **Launch at login** on again if you used it.
